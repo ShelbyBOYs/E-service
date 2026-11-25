@@ -12,6 +12,7 @@
 <body>
   <header class="top">
     <h1>СпільнийБюджет</h1>
+    <p>Хто скільки заплатив і хто кому винен — з мінімумом переказів.</p>
   </header>
 
   <main>
@@ -40,7 +41,7 @@
           <input id="e-date" type="date">
         </label>
         <fieldset class="wide">
-          <legend>Ділимо порівну між</legend>
+          <legend>Ділимо між (число — частка; 1 для всіх = порівну)</legend>
           <div id="e-parts" class="checks"></div>
         </fieldset>
         <div class="wide row">
@@ -61,6 +62,12 @@
       <div class="row">
         <button type="button" id="export-txt" class="ghost">Завантажити підсумок (.txt)</button>
         <button type="button" id="export-csv" class="ghost">Завантажити витрати (.csv)</button>
+      </div>
+      <h3>Резервна копія</h3>
+      <p class="empty">Дані зберігаються лише в цьому браузері. Збережіть копію, щоб перенести їх на інший пристрій.</p>
+      <div class="row">
+        <button type="button" id="export-json" class="ghost">Зберегти копію (.json)</button>
+        <label class="filebtn">Відновити з копії<input id="import-file" type="file" accept=".json,application/json" hidden></label>
       </div>
     </section>
 

@@ -1,4 +1,3 @@
-
 // Усі суми всередині зберігаються в копійках (цілі числа), щоб не було похибок округлення.
 
 const SB = (() => {
@@ -17,7 +16,8 @@ const SB = (() => {
     String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   // ---------- Стан ----------
-  // state = { members: [{id,name}], expenses: [{id,payerId,amount,description,date,participantIds,settled}] }
+  // state = { members: [{id,name}], expenses: [{id,payerId,amount,description,date,participantIds,weights,settled}] }
+  // weights[i] – частка учасника participantIds[i] (ціле 1..100); усі 1 = поділ порівну
   const emptyState = () => ({ members: [], expenses: [] });
 
   const save = (state) => {
@@ -33,7 +33,6 @@ const SB = (() => {
   };
 
   // ---------- Учасники ----------
-  // Повертають { ok: true } або { ok: false, error: "текст помилки" }
   const addMember = (state, name) => {
     const n = String(name || "").trim();
     if (!n) return { ok: false, error: "Введіть ім'я учасника" };
@@ -52,18 +51,25 @@ const SB = (() => {
   };
 
   // ---------- Витрати ----------
-  const validateExpense = (state, { payerId, amount, description, date, participantIds }) => {
+  const validWeights = (ws, n) =>
+    Array.isArray(ws) && ws.length === n && ws.every((w) => Number.isInteger(w) && w >= 1 && w <= 100);
+  // Частки витрати; якщо їх немає або вони хибні – порівну
+  const weightsOf = (e) => (validWeights(e.weights, e.participantIds.length) ? e.weights : e.participantIds.map(() => 1));
+
+  const validateExpense = (state, { payerId, amount, description, date, participantIds, weights }) => {
     const cents = toCents(amount);
     if (cents === null) return { ok: false, error: "Сума має бути додатним числом" };
     if (!state.members.some((m) => m.id === payerId)) return { ok: false, error: "Оберіть, хто заплатив" };
     if (!participantIds || participantIds.length === 0) return { ok: false, error: "Оберіть учасників розподілу" };
     if (participantIds.some((id) => !state.members.some((m) => m.id === id)))
       return { ok: false, error: "Невідомий учасник у розподілі" };
+    const ws = weights || participantIds.map(() => 1);
+    if (!validWeights(ws, participantIds.length)) return { ok: false, error: "Частка — ціле число від 1 до 100" };
     const d = date || todayISO();
     if (d > todayISO()) return { ok: false, error: "Дата не може бути в майбутньому" };
     const desc = String(description || "").trim();
     if (desc.length > 100) return { ok: false, error: "Опис не довше 100 символів" };
-    return { ok: true, cents, date: d, desc };
+    return { ok: true, cents, date: d, desc, weights: [...ws] };
   };
 
   const addExpense = (state, data) => {
@@ -71,7 +77,7 @@ const SB = (() => {
     if (!v.ok) return v;
     state.expenses.push({
       id: newId(), payerId: data.payerId, amount: v.cents, description: v.desc,
-      date: v.date, participantIds: [...data.participantIds], settled: false,
+      date: v.date, participantIds: [...data.participantIds], weights: v.weights, settled: false,
     });
     return { ok: true };
   };
@@ -82,7 +88,7 @@ const SB = (() => {
     const v = validateExpense(state, data);
     if (!v.ok) return v;
     state.expenses[i] = { ...state.expenses[i], payerId: data.payerId, amount: v.cents,
-      description: v.desc, date: v.date, participantIds: [...data.participantIds] };
+      description: v.desc, date: v.date, participantIds: [...data.participantIds], weights: v.weights };
     return { ok: true };
   };
 
@@ -91,7 +97,6 @@ const SB = (() => {
     return { ok: true };
   };
 
-  // Позначити витрату як погашену / ні (погашені не входять у розрахунок)
   const setSettled = (state, expenseId, settled) => {
     const e = state.expenses.find((x) => x.id === expenseId);
     if (!e) return { ok: false, error: "Витрату не знайдено" };
@@ -100,29 +105,33 @@ const SB = (() => {
   };
 
   // ---------- Розрахунки ----------
-  // Поділ суми порівну між n людьми в копійках; залишок розкидається по 1 копійці перших учасників.
-  const splitEqual = (cents, n) => {
-    const base = Math.floor(cents / n);
-    const rest = cents - base * n;
-    return Array.from({ length: n }, (_, i) => base + (i < rest ? 1 : 0));
+  // Поділ суми пропорційно часткам у копійках. Залишок (менше n копійок) отримують
+  // ті, у кого найбільший дробовий залишок; при рівності – перші за порядком.
+  const splitWeighted = (cents, weights) => {
+    const total = weights.reduce((a, b) => a + b, 0);
+    const base = weights.map((w) => Math.floor((cents * w) / total));
+    const frac = weights.map((w, i) => (cents * w) % total);
+    let left = cents - base.reduce((a, b) => a + b, 0);
+    weights.map((_, i) => i).sort((a, b) => frac[b] - frac[a] || a - b).forEach((i) => {
+      if (left > 0) { base[i] += 1; left--; }
+    });
+    return base;
   };
+  const splitEqual = (cents, n) => splitWeighted(cents, Array(n).fill(1));
 
-  // Баланси: для кожного учасника { memberId, name, paid, share, balance } (в копійках).
-  // balance > 0 : йому винні; balance < 0 : він винен.
   const computeBalances = (state) => {
     const map = new Map(state.members.map((m) => [m.id, { memberId: m.id, name: m.name, paid: 0, share: 0, balance: 0 }]));
     state.expenses.filter((e) => !e.settled).forEach((e) => {
       const payer = map.get(e.payerId);
       if (payer) payer.paid += e.amount;
-      const parts = splitEqual(e.amount, e.participantIds.length);
+      const parts = splitWeighted(e.amount, weightsOf(e));
       e.participantIds.forEach((id, i) => { const m = map.get(id); if (m) m.share += parts[i]; });
     });
     map.forEach((m) => { m.balance = m.paid - m.share; });
     return [...map.values()];
   };
 
-  // Переказі «хто кому»: жадібний алгоритм (найбільший боржник -> найбільший кредитор).
-  // Повертає [{ fromId, fromName, toId, toName, amount }] (amount в копійках), не більше n-1 переказів.
+  // Переказі «хто кому»: жадібний алгоритм, не більше n-1 переказів.
   const computeSettlements = (state) => {
     const bal = computeBalances(state);
     const creditors = bal.filter((b) => b.balance > 0).map((b) => ({ ...b })).sort((a, b) => b.balance - a.balance);
@@ -142,7 +151,6 @@ const SB = (() => {
   };
 
   // ---------- Історія та експорт ----------
-  // Фільтр: { memberId?, dateFrom?, dateTo? } ; новіші зверху
   const filterHistory = (state, { memberId, dateFrom, dateTo } = {}) =>
     state.expenses
       .filter((e) => !memberId || e.payerId === memberId || e.participantIds.includes(memberId))
@@ -152,9 +160,14 @@ const SB = (() => {
 
   const memberName = (state, id) => (state.members.find((m) => m.id === id) || { name: "?" }).name;
 
+  // Учасники витрати текстом; частку показуємо лише якщо вона не 1
+  const participantsText = (state, e) => {
+    const ws = weightsOf(e);
+    return e.participantIds.map((id, i) => memberName(state, id) + (ws[i] !== 1 ? ` (×${ws[i]})` : ""));
+  };
+
   const exportTxt = (state) => {
-    const lines = ["СпільнийБюджет: підсумок", ""];
-    lines.push("Баланси:");
+    const lines = ["СпільнийБюджет: підсумок", "", "Баланси:"];
     computeBalances(state).forEach((b) => lines.push(`  ${b.name}: ${b.balance >= 0 ? "+" : ""}${fromCents(b.balance)} грн`));
     lines.push("", "Хто кому скільки винен:");
     const s = computeSettlements(state);
@@ -166,13 +179,43 @@ const SB = (() => {
   const exportCsv = (state) => {
     const rows = [["Дата", "Опис", "Сума, грн", "Заплатив", "Учасники"]];
     state.expenses.forEach((e) => rows.push([e.date, e.description, fromCents(e.amount),
-      memberName(state, e.payerId), e.participantIds.map((id) => memberName(state, id)).join("; ")]));
+      memberName(state, e.payerId), participantsText(state, e).join("; ")]));
     return rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+  };
+
+  // ---------- Резервна копія (JSON) ----------
+  const exportJson = (state) => JSON.stringify({ version: 1, members: state.members, expenses: state.expenses }, null, 2);
+
+  // Перевіряє файл і лише при повному успіху замінює дані в state
+  const importJson = (state, text) => {
+    let d;
+    try { d = JSON.parse(String(text).replace(/^\uFEFF/, "")); }
+    catch (e) { return { ok: false, error: "Файл не є коректним JSON" }; }
+    if (!d || !Array.isArray(d.members) || !Array.isArray(d.expenses))
+      return { ok: false, error: "Невірна структура файлу" };
+    const ids = new Set();
+    for (const m of d.members) {
+      if (!m || typeof m.id !== "string" || typeof m.name !== "string" || !m.name.trim())
+        return { ok: false, error: "Невірні дані учасників" };
+      ids.add(m.id);
+    }
+    for (const e of d.expenses) {
+      const good = e && typeof e.id === "string" && ids.has(e.payerId) && Number.isInteger(e.amount) && e.amount > 0
+        && typeof e.date === "string" && Array.isArray(e.participantIds) && e.participantIds.length > 0
+        && e.participantIds.every((id) => ids.has(id));
+      if (!good) return { ok: false, error: "Невірні дані витрат" };
+    }
+    state.members = d.members.map((m) => ({ id: m.id, name: m.name.trim().slice(0, 50) }));
+    state.expenses = d.expenses.map((e) => ({
+      id: e.id, payerId: e.payerId, amount: e.amount, description: String(e.description || "").slice(0, 100),
+      date: e.date, participantIds: [...e.participantIds], weights: weightsOf(e), settled: !!e.settled,
+    }));
+    return { ok: true };
   };
 
   return { toCents, fromCents, escapeHtml, emptyState, load, save, addMember, removeMember,
     addExpense, updateExpense, removeExpense, setSettled, computeBalances, computeSettlements,
-    filterHistory, memberName, exportTxt, exportCsv };
+    filterHistory, memberName, participantsText, exportTxt, exportCsv, exportJson, importJson, splitWeighted };
 })();
 
 if (typeof module !== "undefined") module.exports = SB; // для перевірки в Node

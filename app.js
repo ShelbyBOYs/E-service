@@ -37,10 +37,12 @@
     const payer = $("e-payer"), prev = payer.value;
     payer.innerHTML = optionsHtml(false);
     if (state.members.some((m) => m.id === prev)) payer.value = prev;
-    const checked = new Set([...document.querySelectorAll("#e-parts input:checked")].map((i) => i.value));
+    const checked = new Set([...document.querySelectorAll("#e-parts input[type=checkbox]:checked")].map((i) => i.value));
+    const prevW = {};
+    document.querySelectorAll("#e-parts [data-w]").forEach((i) => (prevW[i.dataset.w] = i.value));
     const firstDraw = $("e-parts").children.length === 0;
     $("e-parts").innerHTML = state.members.map((m) =>
-      `<label><input type="checkbox" value="${m.id}" ${firstDraw || checked.has(m.id) || !$("e-parts").dataset.init ? "checked" : ""}> ${SB.escapeHtml(m.name)}</label>`).join("");
+      `<label><input type="checkbox" value="${m.id}" ${firstDraw || checked.has(m.id) || !$("e-parts").dataset.init ? "checked" : ""}> ${SB.escapeHtml(m.name)} <input type="number" class="w" min="1" max="100" step="1" value="${prevW[m.id] || 1}" data-w="${m.id}" aria-label="Частка: ${SB.escapeHtml(m.name)}"></label>`).join("");
     $("e-parts").dataset.init = "1";
     $("e-date").max = new Date().toISOString().slice(0, 10);
   }
@@ -69,7 +71,7 @@
       ? list.map((e) => `<li class="${e.settled ? "settled" : ""}">
           <span class="title">${SB.escapeHtml(e.description || "Без опису")}</span>
           <span class="sum">${money(e.amount)}</span>
-          <span class="meta">${fmtDate(e.date)} · заплатив ${SB.escapeHtml(SB.memberName(state, e.payerId))} · ділять: ${e.participantIds.map((id) => SB.escapeHtml(SB.memberName(state, id))).join(", ")}</span>
+          <span class="meta">${fmtDate(e.date)} · заплатив ${SB.escapeHtml(SB.memberName(state, e.payerId))} · ділять: ${SB.participantsText(state, e).map(SB.escapeHtml).join(", ")}</span>
           <span class="acts">
             <label><input type="checkbox" data-settle="${e.id}" ${e.settled ? "checked" : ""}> Погашено</label>
             <button type="button" class="small ghost" data-edit="${e.id}">Редагувати</button>
@@ -104,9 +106,11 @@
 
   $("expense-form").addEventListener("submit", (ev) => {
     ev.preventDefault();
+    const ids = [...document.querySelectorAll("#e-parts input[type=checkbox]:checked")].map((i) => i.value);
     const data = {
       payerId: $("e-payer").value, amount: $("e-amount").value, description: $("e-desc").value,
-      date: $("e-date").value, participantIds: [...document.querySelectorAll("#e-parts input:checked")].map((i) => i.value),
+      date: $("e-date").value, participantIds: ids,
+      weights: ids.map((id) => Number(document.querySelector(`#e-parts [data-w="${id}"]`).value)),
     };
     const res = editingId ? SB.updateExpense(state, editingId, data) : SB.addExpense(state, data);
     if (run(res, editingId ? "Витрату оновлено" : "Витрату додано")) resetExpenseForm();
@@ -121,7 +125,11 @@
       editingId = e.id;
       $("e-payer").value = e.payerId; $("e-amount").value = SB.fromCents(e.amount);
       $("e-desc").value = e.description; $("e-date").value = e.date;
-      document.querySelectorAll("#e-parts input").forEach((i) => (i.checked = e.participantIds.includes(i.value)));
+      document.querySelectorAll("#e-parts input[type=checkbox]").forEach((i) => {
+        const k = e.participantIds.indexOf(i.value);
+        i.checked = k >= 0;
+        document.querySelector(`#e-parts [data-w="${i.value}"]`).value = k >= 0 && e.weights ? e.weights[k] : 1;
+      });
       $("e-submit").textContent = "Зберегти зміни"; $("e-cancel").hidden = false;
       $("expense-form").scrollIntoView({ behavior: "smooth", block: "center" });
     }
@@ -138,6 +146,15 @@
   };
   $("export-txt").addEventListener("click", () => download("pidsumok.txt", SB.exportTxt(state), "text/plain;charset=utf-8"));
   $("export-csv").addEventListener("click", () => download("vytraty.csv", SB.exportCsv(state), "text/csv;charset=utf-8"));
+
+  $("export-json").addEventListener("click", () => download("kopiia-budzhetu.json", SB.exportJson(state), "application/json;charset=utf-8"));
+  $("import-file").addEventListener("change", async (ev) => {
+    const f = ev.target.files[0];
+    ev.target.value = "";
+    if (!f) return;
+    if (!confirm("Поточні дані буде замінено даними з файлу. Продовжити?")) return;
+    if (run(SB.importJson(state, await f.text()), "Дані відновлено")) resetExpenseForm();
+  });
 
   $("e-date").value = new Date().toISOString().slice(0, 10);
   renderAll();
