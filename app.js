@@ -1,7 +1,14 @@
 // Інтерфейс: зв'язує логіку з script.js (SB) і сторінку.
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = SB.load();
+  // [ПРОДОВЖЕННЯ v2] перевірка: чи index.html відповідає цій версії app.js
+  const missing = ["g-select", "g-add", "g-del", "g-currency", "cur-label", "print-title", "transfer-form", "t-from", "t-to", "t-amount", "t-date", "t-list", "f-q", "print-btn"].filter((id) => !$(id));
+  if (missing.length) {
+    document.body.insertAdjacentHTML("afterbegin", `<p style="background:#b3402e;color:#fff;padding:12px 20px;margin:0">Файл index.html старої версії: немає елементів ${missing.join(", ")}. Замініть index.html новим і оновіть сторінку (Ctrl+F5).</p>`);
+    return;
+  }
+  const root = SB.load(); // [ПРОДОВЖЕННЯ v2] root = усі групи
+  let state = SB.active(root); // поточна група
   let editingId = null;
   let toastTimer;
 
@@ -15,11 +22,11 @@
   // Виконує дію зі стану; при успіху зберігає й перемальовує
   const run = (res, okText) => {
     if (!res.ok) { toast(res.error, true); return false; }
-    SB.save(state); renderAll();
+    SB.save(root); renderAll();
     if (okText) toast(okText);
     return true;
   };
-  const money = (c) => SB.fromCents(c) + " грн";
+  const money = (c) => SB.fromCents(c) + " " + SB.sym(state);
   const fmtDate = (iso) => iso.split("-").reverse().join(".");
   const optionsHtml = (withAll) =>
     (withAll ? '<option value="">Усі</option>' : "") +
@@ -66,7 +73,7 @@
     const sel = $("f-member"), prev = sel.value;
     sel.innerHTML = optionsHtml(true);
     if (state.members.some((m) => m.id === prev)) sel.value = prev;
-    const list = SB.filterHistory(state, { memberId: sel.value || undefined, dateFrom: $("f-from").value || undefined, dateTo: $("f-to").value || undefined });
+    const list = SB.filterHistory(state, { memberId: sel.value || undefined, dateFrom: $("f-from").value || undefined, dateTo: $("f-to").value || undefined, query: $("f-q").value });
     $("history").innerHTML = list.length
       ? list.map((e) => `<li class="${e.settled ? "settled" : ""}">
           <span class="title">${SB.escapeHtml(e.description || "Без опису")}</span>
@@ -80,8 +87,33 @@
       : '<li class="empty">Витрат за цими умовами немає.</li>';
   }
 
+  // [ПРОДОВЖЕННЯ v2] групи, валюта, фактичні перекази
+  function renderGroups() {
+    $("g-select").innerHTML = root.groups.map((g) => `<option value="${g.id}">${SB.escapeHtml(g.name)}</option>`).join("");
+    $("g-select").value = state.id;
+    $("g-currency").innerHTML = Object.entries(SB.CURRENCIES).map(([k, v]) => `<option value="${k}">${k} (${v})</option>`).join("");
+    $("g-currency").value = state.currency;
+    $("g-del").disabled = root.groups.length < 2;
+    $("cur-label").textContent = SB.sym(state);
+    $("print-title").textContent = `${state.name} — підсумок на ${fmtDate(new Date().toISOString().slice(0, 10))}`;
+    document.title = `СпільнийБюджет — ${state.name}`;
+  }
+
+  function renderTransfers() {
+    for (const id of ["t-from", "t-to"]) {
+      const sel = $(id), prev = sel.value;
+      sel.innerHTML = optionsHtml(false);
+      if (state.members.some((m) => m.id === prev)) sel.value = prev;
+    }
+    if (state.members.length > 1 && $("t-to").value === $("t-from").value) $("t-to").selectedIndex = ($("t-from").selectedIndex + 1) % state.members.length;
+    $("t-list").innerHTML = state.transfers.length
+      ? [...state.transfers].sort((a, b) => (a.date < b.date ? 1 : -1)).map((t) =>
+          `<li><span>${fmtDate(t.date)} · ${SB.escapeHtml(SB.memberName(state, t.fromId))} → ${SB.escapeHtml(SB.memberName(state, t.toId))}</span><b>${money(t.amount)}</b><button type="button" class="small danger" data-del-tr="${t.id}">Видалити</button></li>`).join("")
+      : '<li class="empty" style="border:0">Переказів ще немає.</li>';
+  }
+
   function renderAll() {
-    renderMembers(); renderExpenseForm(); renderBalances(); renderSettlements(); renderHistory();
+    renderGroups(); renderMembers(); renderExpenseForm(); renderBalances(); renderSettlements(); renderTransfers(); renderHistory();
   }
 
   // ---------- Події ----------
@@ -139,6 +171,36 @@
   });
   ["f-member", "f-from", "f-to"].forEach((id) => $(id).addEventListener("change", renderHistory));
 
+  // [ПРОДОВЖЕННЯ v2] події: групи, валюта, перекази, пошук, друк
+  const switchGroup = (id) => { root.activeId = id; state = SB.active(root); SB.save(root); resetExpenseForm(); renderAll(); };
+  $("g-select").addEventListener("change", (ev) => switchGroup(ev.target.value));
+  $("g-add").addEventListener("click", () => {
+    const name = prompt("Назва нової групи:");
+    if (name === null) return;
+    const res = SB.addGroup(root, name, state.currency);
+    if (res.ok) { state = SB.active(root); SB.save(root); resetExpenseForm(); renderAll(); toast("Групу створено"); }
+    else toast(res.error, true);
+  });
+  $("g-del").addEventListener("click", () => {
+    if (!confirm(`Видалити групу «${state.name}» разом з усіма даними?`)) return;
+    const res = SB.removeGroup(root, state.id);
+    if (res.ok) { state = SB.active(root); SB.save(root); resetExpenseForm(); renderAll(); toast("Групу видалено"); }
+    else toast(res.error, true);
+  });
+  $("g-currency").addEventListener("change", (ev) => run(SB.setCurrency(state, ev.target.value), "Валюту змінено (суми не перераховуються)"));
+
+  $("transfer-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const res = SB.addTransfer(state, { fromId: $("t-from").value, toId: $("t-to").value, amount: $("t-amount").value, date: $("t-date").value });
+    if (run(res, "Переказ записано")) $("t-amount").value = "";
+  });
+  $("t-list").addEventListener("click", (ev) => {
+    const id = ev.target.dataset.delTr;
+    if (id && confirm("Видалити цей запис про переказ?")) run(SB.removeTransfer(state, id), "Запис видалено");
+  });
+  $("f-q").addEventListener("input", renderHistory);
+  $("print-btn").addEventListener("click", () => window.print());
+
   const download = (name, text, type) => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(["\uFEFF" + text], { type }));
@@ -153,9 +215,14 @@
     ev.target.value = "";
     if (!f) return;
     if (!confirm("Поточні дані буде замінено даними з файлу. Продовжити?")) return;
-    if (run(SB.importJson(state, await f.text()), "Дані відновлено")) resetExpenseForm();
+    const res = SB.importJson(root, await f.text()); // [ПРОДОВЖЕННЯ v2] відновлює всі групи
+    if (res.ok) state = SB.active(root);
+    if (run(res, "Дані відновлено")) resetExpenseForm();
   });
 
   $("e-date").value = new Date().toISOString().slice(0, 10);
+  $("t-date").value = $("t-date").max = new Date().toISOString().slice(0, 10);
   renderAll();
+  // [ПРОДОВЖЕННЯ v2] PWA: службовий воркер для роботи офлайн
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 })();

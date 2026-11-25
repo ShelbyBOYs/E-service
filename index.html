@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>СпільнийБюджет</title>
+  <!-- [ПРОДОВЖЕННЯ v2] іконка (грн) і PWA -->
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0d7a85">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -12,7 +16,14 @@
 <body>
   <header class="top">
     <h1>СпільнийБюджет</h1>
-    <p>Хто скільки заплатив і хто кому винен — з мінімумом переказів.</p>
+    <p id="print-title" class="print-only"></p>
+    <!-- [ПРОДОВЖЕННЯ v2] вибір групи і валюти -->
+    <div class="groupbar row">
+      <select id="g-select" aria-label="Група"></select>
+      <button type="button" id="g-add" class="ghost small">+ Нова група</button>
+      <button type="button" id="g-del" class="danger small">Видалити групу</button>
+      <select id="g-currency" aria-label="Валюта групи"></select>
+    </div>
   </header>
 
   <main>
@@ -31,7 +42,7 @@
         <label>Хто заплатив
           <select id="e-payer"></select>
         </label>
-        <label>Сума, грн
+        <label>Сума, <span id="cur-label">грн</span> <!-- [ПРОДОВЖЕННЯ v2] -->
           <input id="e-amount" type="text" inputmode="decimal" placeholder="0.00">
         </label>
         <label>Опис
@@ -51,17 +62,18 @@
       </form>
     </section>
 
-    <section class="panel" aria-labelledby="h-balances">
+    <section class="panel print-keep" aria-labelledby="h-balances">
       <h2 id="h-balances">Баланси</h2>
       <div id="balances"></div>
     </section>
 
-    <section class="panel hero" aria-labelledby="h-settle">
+    <section class="panel hero print-keep" aria-labelledby="h-settle">
       <h2 id="h-settle">Хто кому скільки винен</h2>
       <ul id="settlements" class="transfers"></ul>
       <div class="row">
         <button type="button" id="export-txt" class="ghost">Завантажити підсумок (.txt)</button>
         <button type="button" id="export-csv" class="ghost">Завантажити витрати (.csv)</button>
+        <button type="button" id="print-btn" class="ghost">Друкувати підсумок</button> <!-- [ПРОДОВЖЕННЯ v2] -->
       </div>
       <h3>Резервна копія</h3>
       <p class="empty">Дані зберігаються лише в цьому браузері. Збережіть копію, щоб перенести їх на інший пристрій.</p>
@@ -71,9 +83,25 @@
       </div>
     </section>
 
+    <!-- [ПРОДОВЖЕННЯ v2] фактичні перекази -->
+    <section class="panel print-keep" aria-labelledby="h-transfers">
+      <h2 id="h-transfers">Фактичні перекази</h2>
+      <form id="transfer-form" class="grid">
+        <label>Хто віддав <select id="t-from"></select></label>
+        <label>Кому <select id="t-to"></select></label>
+        <label>Сума <input id="t-amount" type="text" inputmode="decimal" placeholder="0.00"></label>
+        <label>Дата <input id="t-date" type="date"></label>
+        <div class="wide row"><button type="submit">Записати переказ</button></div>
+      </form>
+      <ul id="t-list" class="transfers" style="margin:16px 0 0"></ul>
+    </section>
+
     <section class="panel wide-panel" aria-labelledby="h-history">
       <h2 id="h-history">Історія витрат</h2>
       <div class="grid filters">
+        <label>Пошук <!-- [ПРОДОВЖЕННЯ v2] -->
+          <input id="f-q" type="search" placeholder="Опис або ім'я">
+        </label>
         <label>Учасник
           <select id="f-member"></select>
         </label>

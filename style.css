@@ -96,3 +96,17 @@ input.w { width: 60px; padding: 3px 6px; font: inherit; color: var(--ink); backg
 .panel h3 { margin: 18px 0 4px; font-size: .95rem; }
 .filebtn { display: inline-block; cursor: pointer; padding: 9px 16px; border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); font-weight: 700; }
 .filebtn:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* [ПРОДОВЖЕННЯ v2] панель груп, пошук, друк */
+.groupbar { margin-top: 12px; }
+.groupbar select { width: auto; min-width: 160px; }
+input[type=search] { width: 100%; padding: 9px 10px; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.print-only { display: none; }
+@media print {
+  :root { --bg: #fff; --panel: #fff; --ink: #000; --muted: #444; --line: #999; --plus: #1f7a4a; --minus: #b3402e; }
+  main { display: block; }
+  .panel:not(.print-keep), .groupbar, .top p:not(.print-only), .hero .row, .hero h3, .hero > p, #transfer-form, .t-list button, #t-list button, #toast { display: none !important; }
+  .print-only { display: block; font-weight: 700; margin-top: 4px; }
+  .panel { break-inside: avoid; margin-bottom: 12px; }
+}
