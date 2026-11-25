@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>СпільнийБюджет</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>СпільнийБюджет</h1>
+  </header>
+
+  <main>
+    <section class="panel" aria-labelledby="h-members">
+      <h2 id="h-members">Учасники</h2>
+      <form id="member-form" class="row">
+        <input id="member-name" type="text" maxlength="50" placeholder="Ім'я учасника" aria-label="Ім'я учасника">
+        <button type="submit">Додати</button>
+      </form>
+      <ul id="member-list" class="chips"></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="h-expense">
+      <h2 id="h-expense">Нова витрата</h2>
+      <form id="expense-form" class="grid">
+        <label>Хто заплатив
+          <select id="e-payer"></select>
+        </label>
+        <label>Сума, грн
+          <input id="e-amount" type="text" inputmode="decimal" placeholder="0.00">
+        </label>
+        <label>Опис
+          <input id="e-desc" type="text" maxlength="100" placeholder="Напр. продукти">
+        </label>
+        <label>Дата
+          <input id="e-date" type="date">
+        </label>
+        <fieldset class="wide">
+          <legend>Ділимо порівну між</legend>
+          <div id="e-parts" class="checks"></div>
+        </fieldset>
+        <div class="wide row">
+          <button type="submit" id="e-submit">Додати витрату</button>
+          <button type="button" id="e-cancel" class="ghost" hidden>Скасувати редагування</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel" aria-labelledby="h-balances">
+      <h2 id="h-balances">Баланси</h2>
+      <div id="balances"></div>
+    </section>
+
+    <section class="panel hero" aria-labelledby="h-settle">
+      <h2 id="h-settle">Хто кому скільки винен</h2>
+      <ul id="settlements" class="transfers"></ul>
+      <div class="row">
+        <button type="button" id="export-txt" class="ghost">Завантажити підсумок (.txt)</button>
+        <button type="button" id="export-csv" class="ghost">Завантажити витрати (.csv)</button>
+      </div>
+    </section>
+
+    <section class="panel wide-panel" aria-labelledby="h-history">
+      <h2 id="h-history">Історія витрат</h2>
+      <div class="grid filters">
+        <label>Учасник
+          <select id="f-member"></select>
+        </label>
+        <label>Від
+          <input id="f-from" type="date">
+        </label>
+        <label>До
+          <input id="f-to" type="date">
+        </label>
+      </div>
+      <ul id="history" class="history"></ul>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="script.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
